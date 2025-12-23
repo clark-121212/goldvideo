@@ -260,6 +260,16 @@
             margin-bottom: 20px;
             opacity: 0.5;
         }
+
+        .error-message {
+            color: #ff4444;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #aaa;
+        }
     </style>
 </head>
 <body>
@@ -283,8 +293,11 @@
         </div>
 
         <h2 style="margin-bottom: 20px;">📹 Iyong Mga Videos</h2>
+        <div class="loading" id="loadingState">
+            <p>Nag-lo-load ng videos...</p>
+        </div>
         <div class="video-grid" id="videoGrid"></div>
-        <div class="empty-state" id="emptyState">
+        <div class="empty-state" id="emptyState" style="display: none;">
             <div class="empty-state-icon">🎬</div>
             <h3>Walang videos pa</h3>
             <p>Mag-upload ng video para magsimula</p>
@@ -300,17 +313,21 @@
 
     <script>
         const MAX_SIZE = 150 * 1024 * 1024; // 150MB
+        const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks for large videos
         let videos = [];
 
         const fileInput = document.getElementById('fileInput');
         const videoGrid = document.getElementById('videoGrid');
         const emptyState = document.getElementById('emptyState');
+        const loadingState = document.getElementById('loadingState');
         const progressBar = document.getElementById('progressBar');
         const progressFill = document.getElementById('progressFill');
         const statusMessage = document.getElementById('statusMessage');
 
-        // Load saved videos on page load
-        loadVideos();
+        // Load videos when page loads
+        window.addEventListener('load', () => {
+            loadVideos();
+        });
 
         fileInput.addEventListener('change', handleFileUpload);
 
@@ -318,14 +335,16 @@
             const file = e.target.files[0];
             if (!file) return;
 
+            console.log('File selected:', file.name, 'Size:', file.size);
+
             if (file.size > MAX_SIZE) {
-                alert('Ang file ay masyadong malaki! Maximum 150MB lang po.');
+                showMessage('Ang file ay masyadong malaki! Maximum 150MB lang po.', true);
                 fileInput.value = '';
                 return;
             }
 
             if (!file.type.startsWith('video/')) {
-                alert('Mangyaring pumili ng video file lang po.');
+                showMessage('Mangyaring pumili ng video file lang po.', true);
                 fileInput.value = '';
                 return;
             }
@@ -335,7 +354,7 @@
 
         function uploadVideo(file) {
             progressBar.style.display = 'block';
-            statusMessage.textContent = 'Nag-uupload...';
+            showMessage('Nag-uupload...', false);
             
             const reader = new FileReader();
             
@@ -346,34 +365,65 @@
                 }
             };
 
-            reader.onload = async (e) => {
-                const videoData = {
-                    id: Date.now(),
-                    name: file.name,
-                    size: file.size,
-                    url: e.target.result,
-                    uploadDate: new Date().toISOString()
-                };
-
-                videos.push(videoData);
-                await saveVideo(videoData);
-                renderVideos();
-                
+            reader.onerror = (e) => {
+                console.error('FileReader error:', e);
+                showMessage('May error sa pag-read ng file. Subukan ulit.', true);
                 progressBar.style.display = 'none';
-                progressFill.style.width = '0%';
-                statusMessage.textContent = '✓ Upload successful!';
-                
-                setTimeout(() => {
-                    statusMessage.textContent = '';
-                }, 3000);
+            };
 
-                fileInput.value = '';
+            reader.onload = async (e) => {
+                try {
+                    console.log('File loaded, preparing to save...');
+                    
+                    const videoData = {
+                        id: Date.now(),
+                        name: file.name,
+                        size: file.size,
+                        type: file.type,
+                        uploadDate: new Date().toISOString()
+                    };
+
+                    // Split large video data into chunks if needed
+                    const base64Data = e.target.result;
+                    
+                    // Save video metadata
+                    const saved = await saveVideo(videoData, base64Data);
+                    
+                    if (saved) {
+                        videos.push({...videoData, url: base64Data});
+                        renderVideos();
+                        
+                        progressBar.style.display = 'none';
+                        progressFill.style.width = '0%';
+                        showMessage('✓ Upload successful! Video saved.', false);
+                        
+                        setTimeout(() => {
+                            statusMessage.textContent = '';
+                        }, 3000);
+                    } else {
+                        showMessage('Hindi nai-save ang video. Subukan ulit.', true);
+                        progressBar.style.display = 'none';
+                    }
+
+                    fileInput.value = '';
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    showMessage('May problema sa pag-upload: ' + error.message, true);
+                    progressBar.style.display = 'none';
+                }
             };
 
             reader.readAsDataURL(file);
         }
 
+        function showMessage(message, isError) {
+            statusMessage.textContent = message;
+            statusMessage.className = isError ? 'status-message error-message' : 'status-message';
+        }
+
         function renderVideos() {
+            loadingState.style.display = 'none';
+            
             if (videos.length === 0) {
                 emptyState.style.display = 'block';
                 videoGrid.style.display = 'none';
@@ -389,7 +439,7 @@
                         <video src="${video.url}" preload="metadata"></video>
                     </div>
                     <div class="video-info">
-                        <div class="video-title">${video.name}</div>
+                        <div class="video-title" title="${video.name}">${video.name}</div>
                         <div class="video-size">${formatFileSize(video.size)}</div>
                         <div class="video-actions">
                             <button class="action-btn play-btn" onclick="playVideo(${video.id})">▶ Play</button>
@@ -441,63 +491,93 @@
             document.body.removeChild(a);
         }
 
-        function deleteVideo(id) {
+        async function deleteVideo(id) {
             if (!confirm('Sigurado ka bang gusto mong tanggalin ang video na ito?')) return;
             
-            videos = videos.filter(v => v.id !== id);
-            deleteVideoFromStorage(id);
-            renderVideos();
+            try {
+                await deleteVideoFromStorage(id);
+                videos = videos.filter(v => v.id !== id);
+                renderVideos();
+                showMessage('✓ Video deleted successfully', false);
+                setTimeout(() => {
+                    statusMessage.textContent = '';
+                }, 2000);
+            } catch (error) {
+                console.error('Delete error:', error);
+                showMessage('Hindi ma-delete ang video', true);
+            }
         }
 
         // Storage functions using window.storage API
-        async function saveVideo(videoData) {
+        async function saveVideo(videoData, base64Data) {
             try {
-                const key = `video:${videoData.id}`;
-                await window.storage.set(key, JSON.stringify(videoData), true);
-                console.log('Video saved:', videoData.name);
+                const key = `video_${videoData.id}`;
+                const dataToSave = {
+                    ...videoData,
+                    url: base64Data
+                };
+                
+                console.log('Saving video with key:', key);
+                const result = await window.storage.set(key, JSON.stringify(dataToSave), true);
+                console.log('Save result:', result);
+                
+                return result !== null;
             } catch (error) {
                 console.error('Error saving video:', error);
-                alert('May problema sa pag-save ng video. Subukan ulit.');
+                alert('May problema sa pag-save ng video. Masyado siyang malaki o may error sa storage.');
+                return false;
             }
         }
 
         async function loadVideos() {
             try {
-                const result = await window.storage.list('video:', true);
-                if (result && result.keys) {
+                console.log('Loading videos from storage...');
+                const result = await window.storage.list('video_', true);
+                console.log('List result:', result);
+                
+                if (result && result.keys && result.keys.length > 0) {
                     videos = [];
+                    
                     for (const key of result.keys) {
                         try {
+                            console.log('Loading video:', key);
                             const videoResult = await window.storage.get(key, true);
+                            
                             if (videoResult && videoResult.value) {
                                 const videoData = JSON.parse(videoResult.value);
                                 videos.push(videoData);
+                                console.log('Video loaded:', videoData.name);
                             }
                         } catch (err) {
-                            console.error('Error loading video:', key, err);
+                            console.error('Error loading individual video:', key, err);
                         }
                     }
+                    
                     // Sort by upload date (newest first)
                     videos.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
-                    renderVideos();
+                    console.log('Total videos loaded:', videos.length);
+                } else {
+                    console.log('No videos found in storage');
                 }
+                
+                renderVideos();
             } catch (error) {
                 console.error('Error loading videos:', error);
+                loadingState.innerHTML = '<p class="error-message">May error sa pag-load ng videos</p>';
             }
         }
 
         async function deleteVideoFromStorage(id) {
             try {
-                const key = `video:${id}`;
+                const key = `video_${id}`;
+                console.log('Deleting video:', key);
                 await window.storage.delete(key, true);
-                console.log('Video deleted:', id);
+                console.log('Video deleted from storage');
             } catch (error) {
                 console.error('Error deleting video:', error);
+                throw error;
             }
         }
-
-        // Initial render
-        renderVideos();
     </script>
 </body>
 </html>
