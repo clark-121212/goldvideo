@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="tl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoHub - Upload at Download Videos</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f0f0f;
+            color: #fff;
+        }
+
+        .header {
+            background: #212121;
+            padding: 15px 30px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #303030;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ff0000;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+
+        .upload-section {
+            background: #212121;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 2px dashed #3ea6ff;
+        }
+
+        .upload-area {
+            text-align: center;
+            padding: 40px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: #282828;
+            border-radius: 8px;
+        }
+
+        .upload-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            background: #3ea6ff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+            margin: 10px 5px;
+        }
+
+        .btn:hover {
+            background: #1c8fff;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        .video-card {
+            background: #212121;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.3s;
+            cursor: pointer;
+        }
+
+        .video-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+
+        .video-thumbnail {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            position: relative;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-info {
+            padding: 15px;
+        }
+
+        .video-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .video-size {
+            color: #aaa;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .video-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .play-btn {
+            background: #3ea6ff;
+            color: white;
+        }
+
+        .play-btn:hover {
+            background: #1c8fff;
+        }
+
+        .download-btn {
+            background: #065fd4;
+            color: white;
+        }
+
+        .download-btn:hover {
+            background: #0448a3;
+        }
+
+        .delete-btn {
+            background: #cc0000;
+            color: white;
+        }
+
+        .delete-btn:hover {
+            background: #a30000;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #212121;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 90%;
+            max-height: 90%;
+        }
+
+        .modal video {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 8px;
+        }
+
+        .close-btn {
+            background: #cc0000;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 15px;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #303030;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #3ea6ff;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .status-message {
+            text-align: center;
+            margin-top: 15px;
+            color: #3ea6ff;
+            font-weight: 600;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #aaa;
+        }
+
+        .empty-state-icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🎥 VideoHub</div>
+        <div style="color: #aaa;">Upload & Download Videos (Max 150MB)</div>
+    </div>
+
+    <div class="container">
+        <div class="upload-section">
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📤</div>
+                <h2>I-click para mag-upload ng video</h2>
+                <p style="color: #aaa; margin-top: 10px;">Suportado: MP4, WebM, MOV (Max 150MB)</p>
+            </div>
+            <input type="file" id="fileInput" accept="video/*">
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="status-message" id="statusMessage"></div>
+        </div>
+
+        <h2 style="margin-bottom: 20px;">📹 Iyong Mga Videos</h2>
+        <div class="video-grid" id="videoGrid"></div>
+        <div class="empty-state" id="emptyState">
+            <div class="empty-state-icon">🎬</div>
+            <h3>Walang videos pa</h3>
+            <p>Mag-upload ng video para magsimula</p>
+        </div>
+    </div>
+
+    <div class="modal" id="videoModal">
+        <div class="modal-content">
+            <video id="modalVideo" controls></video>
+            <button class="close-btn" onclick="closeModal()">Isara</button>
+        </div>
+    </div>
+
+    <script>
+        const MAX_SIZE = 150 * 1024 * 1024; // 150MB
+        let videos = [];
+
+        const fileInput = document.getElementById('fileInput');
+        const videoGrid = document.getElementById('videoGrid');
+        const emptyState = document.getElementById('emptyState');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // Load saved videos on page load
+        loadVideos();
+
+        fileInput.addEventListener('change', handleFileUpload);
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.size > MAX_SIZE) {
+                alert('Ang file ay masyadong malaki! Maximum 150MB lang po.');
+                fileInput.value = '';
+                return;
+            }
+
+            if (!file.type.startsWith('video/')) {
+                alert('Mangyaring pumili ng video file lang po.');
+                fileInput.value = '';
+                return;
+            }
+
+            uploadVideo(file);
+        }
+
+        function uploadVideo(file) {
+            progressBar.style.display = 'block';
+            statusMessage.textContent = 'Nag-uupload...';
+            
+            const reader = new FileReader();
+            
+            reader.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = (e.loaded / e.total) * 100;
+                    progressFill.style.width = percent + '%';
+                }
+            };
+
+            reader.onload = async (e) => {
+                const videoData = {
+                    id: Date.now(),
+                    name: file.name,
+                    size: file.size,
+                    url: e.target.result,
+                    uploadDate: new Date().toISOString()
+                };
+
+                videos.push(videoData);
+                await saveVideo(videoData);
+                renderVideos();
+                
+                progressBar.style.display = 'none';
+                progressFill.style.width = '0%';
+                statusMessage.textContent = '✓ Upload successful!';
+                
+                setTimeout(() => {
+                    statusMessage.textContent = '';
+                }, 3000);
+
+                fileInput.value = '';
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        function renderVideos() {
+            if (videos.length === 0) {
+                emptyState.style.display = 'block';
+                videoGrid.style.display = 'none';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            videoGrid.style.display = 'grid';
+            
+            videoGrid.innerHTML = videos.map(video => `
+                <div class="video-card">
+                    <div class="video-thumbnail">
+                        <video src="${video.url}" preload="metadata"></video>
+                    </div>
+                    <div class="video-info">
+                        <div class="video-title">${video.name}</div>
+                        <div class="video-size">${formatFileSize(video.size)}</div>
+                        <div class="video-actions">
+                            <button class="action-btn play-btn" onclick="playVideo(${video.id})">▶ Play</button>
+                            <button class="action-btn download-btn" onclick="downloadVideo(${video.id})">⬇ Download</button>
+                            <button class="action-btn delete-btn" onclick="deleteVideo(${video.id})">🗑</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024 * 1024) {
+                return (bytes / 1024).toFixed(2) + ' KB';
+            }
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        function playVideo(id) {
+            const video = videos.find(v => v.id === id);
+            if (!video) return;
+
+            const modal = document.getElementById('videoModal');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modalVideo.src = video.url;
+            modal.classList.add('active');
+            modalVideo.play();
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('videoModal');
+            const modalVideo = document.getElementById('modalVideo');
+            
+            modalVideo.pause();
+            modalVideo.src = '';
+            modal.classList.remove('active');
+        }
+
+        function downloadVideo(id) {
+            const video = videos.find(v => v.id === id);
+            if (!video) return;
+
+            const a = document.createElement('a');
+            a.href = video.url;
+            a.download = video.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function deleteVideo(id) {
+            if (!confirm('Sigurado ka bang gusto mong tanggalin ang video na ito?')) return;
+            
+            videos = videos.filter(v => v.id !== id);
+            deleteVideoFromStorage(id);
+            renderVideos();
+        }
+
+        // Storage functions using window.storage API
+        async function saveVideo(videoData) {
+            try {
+                const key = `video:${videoData.id}`;
+                await window.storage.set(key, JSON.stringify(videoData), true);
+                console.log('Video saved:', videoData.name);
+            } catch (error) {
+                console.error('Error saving video:', error);
+                alert('May problema sa pag-save ng video. Subukan ulit.');
+            }
+        }
+
+        async function loadVideos() {
+            try {
+                const result = await window.storage.list('video:', true);
+                if (result && result.keys) {
+                    videos = [];
+                    for (const key of result.keys) {
+                        try {
+                            const videoResult = await window.storage.get(key, true);
+                            if (videoResult && videoResult.value) {
+                                const videoData = JSON.parse(videoResult.value);
+                                videos.push(videoData);
+                            }
+                        } catch (err) {
+                            console.error('Error loading video:', key, err);
+                        }
+                    }
+                    // Sort by upload date (newest first)
+                    videos.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
+                    renderVideos();
+                }
+            } catch (error) {
+                console.error('Error loading videos:', error);
+            }
+        }
+
+        async function deleteVideoFromStorage(id) {
+            try {
+                const key = `video:${id}`;
+                await window.storage.delete(key, true);
+                console.log('Video deleted:', id);
+            } catch (error) {
+                console.error('Error deleting video:', error);
+            }
+        }
+
+        // Initial render
+        renderVideos();
+    </script>
+</body>
+</html>
