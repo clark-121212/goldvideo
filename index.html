@@ -313,8 +313,8 @@
 
     <script>
         const MAX_SIZE = 150 * 1024 * 1024; // 150MB
-        const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks for large videos
         let videos = [];
+        let db;
 
         const fileInput = document.getElementById('fileInput');
         const videoGrid = document.getElementById('videoGrid');
@@ -324,9 +324,43 @@
         const progressFill = document.getElementById('progressFill');
         const statusMessage = document.getElementById('statusMessage');
 
+        // Initialize IndexedDB
+        function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('VideoHubDB', 1);
+                
+                request.onerror = () => {
+                    console.error('Database failed to open');
+                    reject(request.error);
+                };
+                
+                request.onsuccess = () => {
+                    db = request.result;
+                    console.log('Database opened successfully');
+                    resolve(db);
+                };
+                
+                request.onupgradeneeded = (e) => {
+                    db = e.target.result;
+                    
+                    if (!db.objectStoreNames.contains('videos')) {
+                        const objectStore = db.createObjectStore('videos', { keyPath: 'id' });
+                        objectStore.createIndex('uploadDate', 'uploadDate', { unique: false });
+                        console.log('Object store created');
+                    }
+                };
+            });
+        }
+
         // Load videos when page loads
-        window.addEventListener('load', () => {
-            loadVideos();
+        window.addEventListener('load', async () => {
+            try {
+                await initDB();
+                await loadVideos();
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showMessage('May problema sa pag-setup ng database', true);
+            }
         });
 
         fileInput.addEventListener('change', handleFileUpload);
@@ -380,17 +414,15 @@
                         name: file.name,
                         size: file.size,
                         type: file.type,
+                        url: e.target.result,
                         uploadDate: new Date().toISOString()
                     };
 
-                    // Split large video data into chunks if needed
-                    const base64Data = e.target.result;
-                    
-                    // Save video metadata
-                    const saved = await saveVideo(videoData, base64Data);
+                    showMessage('Nag-sasave sa database...', false);
+                    const saved = await saveVideo(videoData);
                     
                     if (saved) {
-                        videos.push({...videoData, url: base64Data});
+                        videos.push(videoData);
                         renderVideos();
                         
                         progressBar.style.display = 'none';
@@ -495,7 +527,7 @@
             if (!confirm('Sigurado ka bang gusto mong tanggalin ang video na ito?')) return;
             
             try {
-                await deleteVideoFromStorage(id);
+                await deleteVideoFromDB(id);
                 videos = videos.filter(v => v.id !== id);
                 renderVideos();
                 showMessage('✓ Video deleted successfully', false);
@@ -508,75 +540,63 @@
             }
         }
 
-        // Storage functions using window.storage API
-        async function saveVideo(videoData, base64Data) {
-            try {
-                const key = `video_${videoData.id}`;
-                const dataToSave = {
-                    ...videoData,
-                    url: base64Data
+        // IndexedDB functions
+        function saveVideo(videoData) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['videos'], 'readwrite');
+                const objectStore = transaction.objectStore('videos');
+                const request = objectStore.add(videoData);
+                
+                request.onsuccess = () => {
+                    console.log('Video saved to database');
+                    resolve(true);
                 };
                 
-                console.log('Saving video with key:', key);
-                const result = await window.storage.set(key, JSON.stringify(dataToSave), true);
-                console.log('Save result:', result);
-                
-                return result !== null;
-            } catch (error) {
-                console.error('Error saving video:', error);
-                alert('May problema sa pag-save ng video. Masyado siyang malaki o may error sa storage.');
-                return false;
-            }
+                request.onerror = () => {
+                    console.error('Error saving video:', request.error);
+                    reject(request.error);
+                };
+            });
         }
 
-        async function loadVideos() {
-            try {
-                console.log('Loading videos from storage...');
-                const result = await window.storage.list('video_', true);
-                console.log('List result:', result);
+        function loadVideos() {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['videos'], 'readonly');
+                const objectStore = transaction.objectStore('videos');
+                const request = objectStore.getAll();
                 
-                if (result && result.keys && result.keys.length > 0) {
-                    videos = [];
-                    
-                    for (const key of result.keys) {
-                        try {
-                            console.log('Loading video:', key);
-                            const videoResult = await window.storage.get(key, true);
-                            
-                            if (videoResult && videoResult.value) {
-                                const videoData = JSON.parse(videoResult.value);
-                                videos.push(videoData);
-                                console.log('Video loaded:', videoData.name);
-                            }
-                        } catch (err) {
-                            console.error('Error loading individual video:', key, err);
-                        }
-                    }
-                    
-                    // Sort by upload date (newest first)
+                request.onsuccess = () => {
+                    videos = request.result || [];
                     videos.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
-                    console.log('Total videos loaded:', videos.length);
-                } else {
-                    console.log('No videos found in storage');
-                }
+                    console.log('Loaded videos:', videos.length);
+                    renderVideos();
+                    resolve(videos);
+                };
                 
-                renderVideos();
-            } catch (error) {
-                console.error('Error loading videos:', error);
-                loadingState.innerHTML = '<p class="error-message">May error sa pag-load ng videos</p>';
-            }
+                request.onerror = () => {
+                    console.error('Error loading videos:', request.error);
+                    loadingState.innerHTML = '<p class="error-message">May error sa pag-load ng videos</p>';
+                    reject(request.error);
+                };
+            });
         }
 
-        async function deleteVideoFromStorage(id) {
-            try {
-                const key = `video_${id}`;
-                console.log('Deleting video:', key);
-                await window.storage.delete(key, true);
-                console.log('Video deleted from storage');
-            } catch (error) {
-                console.error('Error deleting video:', error);
-                throw error;
-            }
+        function deleteVideoFromDB(id) {
+            return new Promise((resolve, reject) => {
+                const transaction = db.transaction(['videos'], 'readwrite');
+                const objectStore = transaction.objectStore('videos');
+                const request = objectStore.delete(id);
+                
+                request.onsuccess = () => {
+                    console.log('Video deleted from database');
+                    resolve(true);
+                };
+                
+                request.onerror = () => {
+                    console.error('Error deleting video:', request.error);
+                    reject(request.error);
+                };
+            });
         }
     </script>
 </body>
